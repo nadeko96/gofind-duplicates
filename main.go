@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha512"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -14,6 +16,8 @@ import (
 )
 
 var files = make(map[[sha512.Size]byte]string)
+var dir string
+var skipRename bool
 
 func checkDepulicates(path string, info os.FileInfo, err error) error {
 	if err != nil {
@@ -43,7 +47,10 @@ func checkDepulicates(path string, info os.FileInfo, err error) error {
 		fmt.Printf("%q is a duplicate of %q\n", path, f)
 		promptDelete(path)
 	} else {
-		checkBadNames(path, hash)
+		if !skipRename {
+			checkBadNames(path, hash)
+		}
+
 		files[hash] = path
 	}
 
@@ -74,18 +81,27 @@ func checkBadNames(path string, hash [64]uint8) {
 }
 
 func promptNameChange(path string, file string, ext string) {
+	reader := bufio.NewReader(os.Stdin)
+
 	var input string
-	fmt.Printf("%q is a shitty filename, open and change it? \n", file+"."+ext)
-	fmt.Scanf("%s", input)
-	openImage(path)
-	fmt.Printf("What is a good name for it fam? Press \"s\" to skip")
-	fmt.Scanf("%s", &input)
+	fmt.Printf("%q is a shitty filename, open and change it? \n", file+ext)
+	input, _ = reader.ReadString('\n')
+	input = strings.TrimSuffix(input, "\n")
+	if strings.ToUpper("YES") == input {
+		openImage(path)
+		fmt.Printf("What is a good name for it fam? Press \"s\" to skip")
+		input, _ = reader.ReadString('\n')
+		input = strings.TrimSuffix(input, "\n")
+		newPath := path[0:len(path)-len(file+ext)] + input + ext
 
-	newPath := path[0:len(path)-len(file+ext)] + input + ext
+		fmt.Println(newPath)
 
-	if len(input) > 2 {
-		os.Rename(path, newPath)
+		if len(input) > 2 {
+			os.Rename(path, newPath)
+		}
 	}
+
+	fmt.Println()
 }
 
 func openImage(p string) {
@@ -102,9 +118,7 @@ func openImage(p string) {
 		err = fmt.Errorf("Can't open platform")
 	}
 
-	if err != nil {
-		log.Fatal(err)
-	}
+	handle(err)
 }
 
 func handle(err error) {
@@ -114,13 +128,14 @@ func handle(err error) {
 }
 
 func main() {
-	var dir string
-	if len(os.Args) != 2 {
+
+	flag.StringVar(&dir, "p", "current directory", "path to search")
+	flag.BoolVar(&skipRename, "s", false, "Skips renaming files")
+	flag.Parse()
+	if dir == "current directory" {
 		cwd, err := os.Getwd()
 		handle(err)
 		dir = cwd
-	} else {
-		dir = os.Args[1] // get the target directory
 	}
 
 	err := filepath.Walk(dir, checkDepulicates)
